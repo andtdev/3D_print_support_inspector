@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Support inspector</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #16181c; color: #d8dbe0;
+               font: 13px/1.4 -apple-system, "Helvetica Neue", Arial, sans-serif; }
+  #side { position: absolute; left: 0; top: 0; bottom: 0; width: 310px; box-sizing: border-box; padding: 12px;
+          background: #1f2227; border-right: 1px solid #33373e; display: flex; flex-direction: column; }
+  #view { position: absolute; left: 310px; right: 0; top: 0; bottom: 0; }
+  canvas { width: 100%; height: 100%; display: block; cursor: grab; }
+  h1 { font-size: 15px; margin: 0 0 2px; }
+  .dim { color: #8b919b; }
+  .row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+  .row label { flex: 1; }
+  .sw { width: 11px; height: 11px; border-radius: 2px; display: inline-block; flex: none; }
+  input[type=range] { width: 150px; }
+  hr { border: 0; border-top: 1px solid #33373e; margin: 9px 0; width: 100%; }
+  #list { overflow-y: auto; flex: 1; margin: 0 -12px -12px; }
+  .area { padding: 5px 12px; cursor: pointer; display: flex; gap: 8px; align-items: baseline; }
+  .area:hover { background: #2a2e35; }
+  .area.on { background: #343a44; }
+  .area b { min-width: 22px; }
+  .pin { position: absolute; transform: translate(-50%, -50%); min-width: 16px; height: 16px; padding: 0 2px;
+         border-radius: 9px; font-size: 10px; line-height: 16px; text-align: center; font-weight: 700;
+         color: #000; cursor: pointer; border: 1px solid rgba(0,0,0,.6); user-select: none; }
+  .pin.on { outline: 2px solid #fff; }
+  button { background: #343a44; color: inherit; border: 1px solid #4a505b; border-radius: 4px; padding: 3px 9px; cursor: pointer; }
+  #help { position: absolute; right: 10px; bottom: 8px; color: #6f7580; font-size: 11px; pointer-events: none; }
+  #ok { color: #6fd08c; font-weight: 600; margin: 6px 0; }
+</style>
+</head>
+<body>
+<div id="side">
+  <h1>Support inspector</h1>
+  <div class="dim" id="source"></div>
+  <div id="summary" style="margin-top:6px"></div>
+  <hr>
+  <div id="toggles"></div>
+  <div class="row"><label>Model opacity</label><input type="range" id="opacity" min="0.05" max="1" step="0.05" value="1"></div>
+  <div class="row"><label>Risks show through</label><input type="checkbox" id="xray" checked></div>
+  <div class="row"><label>Area numbers</label><input type="checkbox" id="pins" checked></div>
+  <hr>
+  <div class="row"><label>Cut above z <span id="ztopv"></span></label><input type="range" id="ztop"></div>
+  <div class="row"><label>Cut below z <span id="zbotv"></span></label><input type="range" id="zbot"></div>
+  <div class="row"><button id="reset">Whole plate</button><button id="below">From below</button><button id="uncut">No cut</button></div>
+  <hr>
+  <div class="dim" id="settings"></div>
+  <hr>
+  <div id="list"></div>
+</div>
+<div id="view"><canvas id="gl"></canvas><div id="pinbox"></div>
+  <div id="help">drag: turn &nbsp; shift-drag or right-drag: move &nbsp; wheel: zoom &nbsp; click an area: go to it</div></div>
+<script>
+const DATA = /*DATA*/null;
+const COLOR = { model: [0.70, 0.73, 0.78], support: [0.20, 0.62, 0.32], other: [0.38, 0.40, 0.44],
+                hanging: [1.0, 0.13, 0.13], bridge: [1.0, 0.55, 0.05], steep: [1.0, 0.88, 0.15] };
+const LABEL = { model: "Model (walls and surfaces)", support: "Supports", other: "Brim, skirt, tower",
+                hanging: "Hanging: nothing below", bridge: "Bridge longer than allowed", steep: "Steep overhang" };
+const RISK = ["hanging", "bridge", "steep"];
+const css = c => `rgb(${c.map(v => Math.round(v * 255)).join(",")})`;
+const $ = id => document.getElementById(id);
+
+// ------------------------------------------------------------------------------------------- panel
+$("source").textContent = DATA.source;
+const n = k => DATA.regions.filter(r => r.kind === k).length;
+$("summary").innerHTML = DATA.regions.length
+  ? RISK.filter(n).map(k => `<div class="row"><span class="sw" style="background:${css(COLOR[k])}"></span>${n(k)} ${k}</div>`).join("")
+  : '<div id="ok">No risk areas: everything checked rests on the model or on a support.</div>';
+const s = DATA.settings;
+$("settings").innerHTML = `overhang over ${s.max_overhang_angle}&deg; &middot; bridge over ${s.max_bridge} mm &middot; ` +
+  `support gap ${s.support_gap} mm, reach ${s.support_reach} mm &middot; areas from ${s.min_length} mm of line`;
+const show = {};
+for (const L of DATA.layers) {
+  show[L.name] = true;
+  if (!L.count) continue;
+  const row = document.createElement("div");
+  row.className = "row";
+  row.innerHTML = `<span class="sw" style="background:${css(COLOR[L.name])}"></span><label>${LABEL[L.name]}</label>` +
+                  `<input type="checkbox" checked>`;
+  row.querySelector("input").onchange = e => { show[L.name] = e.target.checked; draw(); };
+  $("toggles").appendChild(row);
+}
+const zmax = DATA.zmax + 0.01;
+for (const id of ["ztop", "zbot"]) {
+  const r = $(id);
+  r.min = 0; r.max = zmax; r.step = DATA.layer_height / 2; r.value = id === "ztop" ? zmax : 0;
+  r.oninput = () => { cutLabels(); draw(); };
+}
+function cutLabels() {
+  $("ztopv").textContent = (+$("ztop").value).toFixed(2);
+  $("zbotv").textContent = (+$("zbot").value).toFixed(2);
+}
+cutLabels();
+for (const id of ["opacity", "xray", "pins"]) $(id).oninput = () => draw();
+
+let selected = -1;
+const rows = [], pins = [];
+DATA.regions.forEach((r, i) => {
+  const row = document.createElement("div");
+  row.className = "area";
+  row.innerHTML = `<b style="color:${css(COLOR[r.kind])}">${r.id}</b><span>${r.kind}, ${r.length} mm of line` +
+    `<br><span class="dim">z ${r.z[0]}${r.z[1] > r.z[0] ? " to " + r.z[1] : ""} &middot; x ${r.center[0]}, y ${r.center[1]}</span></span>`;
+  row.onclick = () => focus(i);
+  $("list").appendChild(row);
+  rows.push(row);
+  if (i < 150) {
+    const pin = document.createElement("div");
+    pin.className = "pin";
+    pin.style.background = css(COLOR[r.kind]);
+    pin.textContent = r.id;
+    pin.onclick = () => focus(i);
+    $("pinbox").appendChild(pin);
+    pins.push(pin);
+  }
+});
+
+// ------------------------------------------------------------------------------------------ camera
+const size = DATA.size, origin = DATA.origin;
+const cam = { target: [0, 0, 0], yaw: -0.6, pitch: 0.55, dist: 100 };
+function wholePlate() {
+  cam.target = [size[0] / 2, size[1] / 2, DATA.zmax / 3];
+  cam.dist = 1.9 * Math.max(size[0], size[1], DATA.zmax);
+  cam.yaw = -0.6; cam.pitch = 0.55;
+}
+wholePlate();
+function focus(i) {
+  const r = DATA.regions[i];
+  selected = i;
+  rows.forEach((row, k) => row.classList.toggle("on", k === i));
+  pins.forEach((pin, k) => pin.classList.toggle("on", k === i));
+  rows[i].scrollIntoView({ block: "nearest" });
+  cam.target = [r.center[0] - origin[0], r.center[1] - origin[1], r.center[2]];
+  const extent = Math.max(r.max[0] - r.min[0], r.max[1] - r.min[1], r.z[1] - r.z[0]);
+  cam.dist = Math.max(45, 4 * extent);
+  cam.pitch = -0.45;       // undersides are seen from below
+  draw();
+}
+$("reset").onclick = () => { wholePlate(); draw(); };
+$("below").onclick = () => { cam.pitch = -Math.abs(cam.pitch || 0.45); draw(); };
+$("uncut").onclick = () => { $("ztop").value = zmax; $("zbot").value = 0; cutLabels(); draw(); };
+
+const canvas = $("gl");
+let drag = null;
+canvas.onpointerdown = e => { drag = { x: e.clientX, y: e.clientY, pan: e.shiftKey || e.button === 2 }; canvas.setPointerCapture(e.pointerId); };
+canvas.onpointerup = () => { drag = null; };
+canvas.oncontextmenu = e => e.preventDefault();
+canvas.onpointermove = e => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  drag.x = e.clientX; drag.y = e.clientY;
+  if (drag.pan) {
+    const k = cam.dist * 0.0012;
+    const [right, up] = axes();
+    for (let i = 0; i < 3; i++) cam.target[i] += (-dx * right[i] + dy * up[i]) * k;
+  } else {
+    cam.yaw -= dx * 0.006;
+    cam.pitch = Math.max(-1.55, Math.min(1.55, cam.pitch + dy * 0.006));
+  }
+  draw();
+};
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  cam.dist = Math.max(2, Math.min(3000, cam.dist * Math.exp(e.deltaY * 0.0015)));
+  draw();
+}, { passive: false });
+
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const norm = a => { const l = Math.hypot(...a); return a.map(v => v / l); };
+function eye() {
+  const c = Math.cos(cam.pitch);
+  return [cam.target[0] + cam.dist * c * Math.sin(cam.yaw), cam.target[1] - cam.dist * c * Math.cos(cam.yaw),
+          cam.target[2] + cam.dist * Math.sin(cam.pitch)];
+}
+function axes() {
+  const f = norm(sub(cam.target, eye()));
+  const right = norm(cross(f, [0, 0, 1]));
+  return [right, cross(right, f), f];
+}
+function matrix(aspect) {      // projection * view, column-major
+  const e = eye(), [r, u, f] = axes();
+  const t = 1 / Math.tan(0.30), near = Math.max(0.5, cam.dist / 50), far = cam.dist * 20 + 2000;
+  const view = [r[0], u[0], -f[0], 0, r[1], u[1], -f[1], 0, r[2], u[2], -f[2], 0, -dot(r, e), -dot(u, e), dot(f, e), 1];
+  const proj = [t / aspect, 0, 0, 0, 0, t, 0, 0, 0, 0, (far + near) / (near - far), -1, 0, 0, 2 * far * near / (near - far), 0];
+  const m = new Float32Array(16);
+  for (let c = 0; c < 4; c++) for (let rr = 0; rr < 4; rr++) {
+    let v = 0;
+    for (let k = 0; k < 4; k++) v += proj[k * 4 + rr] * view[c * 4 + k];
+    m[c * 4 + rr] = v;
+  }
+  return [m, t];
+}
+
+// ------------------------------------------------------------------------------------------- WebGL
+const gl = canvas.getContext("webgl2", { antialias: true });
+if (!gl) document.body.innerHTML = "<p style='padding:20px'>This viewer needs WebGL 2.</p>";
+const VS = `#version 300 es
+in vec2 corner; in vec2 p0; in vec2 p1; in float pz;
+uniform mat4 mvp; uniform float scale, width, height, minPx, pxPerUnit; uniform vec2 viewport;
+out float vz; out float side; out vec3 tangent;
+void main() {
+  vec3 a = vec3(p0 * scale, pz * scale - height * 0.5), b = vec3(p1 * scale, pz * scale - height * 0.5);
+  vec4 ca = mvp * vec4(a, 1.0), cb = mvp * vec4(b, 1.0);
+  vec2 sa = ca.xy / ca.w * viewport, sb = cb.xy / cb.w * viewport;
+  vec2 d = sb - sa; float l = length(d);
+  d = l > 1e-5 ? d / l : vec2(1.0, 0.0);
+  vec4 c = mix(ca, cb, corner.x);
+  float half_px = max(minPx, 0.5 * width * pxPerUnit / c.w);
+  vec2 off = (vec2(-d.y, d.x) * corner.y + d * (corner.x * 2.0 - 1.0) * 0.5) * half_px;
+  c.xy += off / viewport * 2.0 * c.w;
+  gl_Position = c; vz = pz * scale; side = corner.y; tangent = b - a;
+}`;
+const FS = `#version 300 es
+precision mediump float;
+in float vz; in float side; in vec3 tangent;
+uniform vec3 color; uniform float alpha, ztop, zbot, flat_;
+out vec4 frag;
+void main() {
+  if (vz > ztop || vz < zbot) discard;
+  vec3 t = normalize(tangent + vec3(1e-6));
+  float along = dot(t, normalize(vec3(0.45, 0.35, 0.82)));
+  float light = 0.45 + 0.55 * sqrt(max(0.0, 1.0 - along * along));
+  light *= 1.0 - 0.38 * side * side;
+  frag = vec4(color * mix(light, 1.0, flat_), alpha);
+}`;
+function shader(type, src) {
+  const sh = gl.createShader(type);
+  gl.shaderSource(sh, src); gl.compileShader(sh);
+  if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh));
+  return sh;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog, shader(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FS));
+gl.linkProgram(prog); gl.useProgram(prog);
+const U = name => gl.getUniformLocation(prog, name);
+const quad = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, -1, 1, -1, 0, 1, 1, 1]), gl.STATIC_DRAW);
+
+function makeLayer(name, bytes, count, width) {
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+  const corner = gl.getAttribLocation(prog, "corner");
+  gl.enableVertexAttribArray(corner); gl.vertexAttribPointer(corner, 2, gl.FLOAT, false, 0, 0);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, bytes, gl.STATIC_DRAW);
+  [["p0", 2, 0], ["p1", 2, 4], ["pz", 1, 8]].forEach(([attr, len, at]) => {
+    const loc = gl.getAttribLocation(prog, attr);
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, len, gl.UNSIGNED_SHORT, false, 10, at);
+    gl.vertexAttribDivisor(loc, 1);
+  });
+  return { name, vao, count, width };
+}
+async function decode(b64) {
+  try { return await (await fetch("data:application/octet-stream;base64," + b64)).arrayBuffer(); }
+  catch (e) { const s = atob(b64), a = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a.buffer; }
+}
+const layers = {};
+function bedGrid() {       // a 10 mm grid under the print
+  const q = v => Math.round(v / DATA.scale), seg = [];
+  for (let x = 0; x <= size[0] + 10; x += 10) seg.push(q(x), 0, q(x), q(Math.ceil(size[1] / 10) * 10), 0);
+  for (let y = 0; y <= size[1] + 10; y += 10) seg.push(0, q(y), q(Math.ceil(size[0] / 10) * 10), q(y), 0);
+  return makeLayer("bed", new Uint16Array(seg), seg.length / 5, 0.05);
+}
+
+function drawLayer(L, color, alpha, minPx, flat) {
+  if (!L || !L.count) return;
+  gl.uniform3fv(U("color"), color); gl.uniform1f(U("alpha"), alpha);
+  gl.uniform1f(U("width"), L.width); gl.uniform1f(U("minPx"), minPx); gl.uniform1f(U("flat_"), flat ? 1 : 0);
+  gl.bindVertexArray(L.vao);
+  gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, L.count);
+}
+let queued = false;
+function draw() { if (!queued) { queued = true; requestAnimationFrame(render); } }
+function render() {
+  queued = false;
+  const dpr = window.devicePixelRatio || 1, w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  gl.viewport(0, 0, w, h);
+  gl.clearColor(0.086, 0.094, 0.11, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  const [m, t] = matrix(w / h);
+  gl.uniformMatrix4fv(U("mvp"), false, m);
+  gl.uniform1f(U("scale"), DATA.scale); gl.uniform1f(U("height"), DATA.layer_height);
+  gl.uniform2f(U("viewport"), w, h); gl.uniform1f(U("pxPerUnit"), t * h / 2);
+  gl.uniform1f(U("ztop"), 1e9); gl.uniform1f(U("zbot"), -1e9);
+  gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND);
+  drawLayer(layers.bed, [0.26, 0.28, 0.32], 1, 0.5 * dpr, true);
+  gl.uniform1f(U("ztop"), +$("ztop").value + 0.001); gl.uniform1f(U("zbot"), +$("zbot").value - 0.001);
+
+  const opacity = +$("opacity").value;
+  if (show.other) drawLayer(layers.other, COLOR.other, 1, 0.5 * dpr, false);
+  if (show.support) drawLayer(layers.support, COLOR.support, 1, 0.5 * dpr, false);
+  if (show.model && opacity >= 1) drawLayer(layers.model, COLOR.model, 1, 0.5 * dpr, false);
+  for (const k of RISK) if (show[k]) drawLayer(layers[k], COLOR[k], 1, 1.5 * dpr, true);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
+  if (show.model && opacity < 1) drawLayer(layers.model, COLOR.model, opacity * 0.6, 0.5 * dpr, false);
+  if ($("xray").checked) {
+    gl.disable(gl.DEPTH_TEST);
+    for (const k of RISK) if (show[k]) drawLayer(layers[k], COLOR[k], 0.4, 1.5 * dpr, true);
+  }
+
+  const on = $("pins").checked, ztop = +$("ztop").value, zbot = +$("zbot").value;
+  pins.forEach((pin, i) => {
+    const r = DATA.regions[i], p = [r.center[0] - origin[0], r.center[1] - origin[1], r.center[2]];
+    const cw = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
+    const visible = on && show[r.kind] && cw > 0 && r.z[0] <= ztop && r.z[1] >= zbot;
+    pin.style.display = visible ? "" : "none";
+    if (!visible) return;
+    const x = (m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12]) / cw, y = (m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13]) / cw;
+    pin.style.left = (x * 0.5 + 0.5) * canvas.clientWidth + "px";
+    pin.style.top = (0.5 - y * 0.5) * canvas.clientHeight + "px";
+  });
+}
+window.onresize = draw;
+const jump = /#area=(\d+)/.exec(location.hash);       // report.html#area=3 opens on area 3
+if (jump && DATA.regions[jump[1] - 1]) focus(jump[1] - 1);
+(async () => {
+  layers.bed = bedGrid();
+  for (const L of DATA.layers) {
+    if (L.count) layers[L.name] = makeLayer(L.name, await decode(L.data), L.count, L.width);
+    L.data = null;
+    draw();
+  }
+})();
+</script>
+</body>
+</html>

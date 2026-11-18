@@ -1,0 +1,7 @@
+#!/bin/sh
+# Runs the inspector; the first run sets up its Python environment (numpy and scipy) in .venv.
+dir=$(cd "$(dirname "$0")" && pwd)
+if [ ! -x "$dir/.venv/bin/python" ]; then
+    python3 -m venv "$dir/.venv" && "$dir/.venv/bin/pip" install -q -r "$dir/requirements.txt" || exit 2
+fi
+exec "$dir/.venv/bin/python" "$dir/support_inspector.py" "$@"

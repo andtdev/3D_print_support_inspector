@@ -50,10 +50,12 @@ surfaces, the supports and the risk areas, each with its number from the list.
 
 To point at parts of the print, for instance to say what should change where:
 
-1. Press "Select areas" (or S) and drag a box over the model. Only what you see is taken; with
-   "through the model" ticked, everything inside the box is, front to back. More boxes add to the
-   selection, alt-drag takes away, a click takes a small spot. The "+" beside a risk area selects
-   that area. Right-drag and the wheel still move the view.
+1. Press "Select areas" (or S) and drag a box over the model. The box takes exactly the surface
+   you see inside it: a ray goes from your eye through every point of the box and stops on the
+   first thing it hits, model or support, so nothing behind is taken and nothing outside the box.
+   "Reach" is how far from your eye the rays go (200 mm unless changed): zoom in, or raise it.
+   More boxes add to the selection, alt-drag takes away, a click takes a small spot. The "+"
+   beside a risk area selects that area. Right-drag and the wheel still move the view.
 2. Type a label and press Enter or "Add". The area takes a colour and shows its label in the view.
 3. "Save file" downloads `NAME.selections.json`; "Copy" puts the same text on the clipboard.
 

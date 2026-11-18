@@ -58,14 +58,15 @@
   <hr>
   <div class="dim" id="settings"></div>
   <hr>
-  <div class="row"><button id="selmode">Select areas</button><label style="text-align:right">through the model</label><input type="checkbox" id="selthrough"></div>
-  <div class="dim" id="selhint" style="display:none">Drag a box over the model. More boxes add to it, alt-drag takes away. Right-drag and the wheel still move the view.</div>
+  <div class="row"><button id="selmode">Select areas</button><label style="text-align:right" title="How far from your eye a selection reaches">reach, mm</label><input type="number" id="selreach" value="200" min="10" step="10" style="width:64px;background:#16181c;color:inherit;border:1px solid #4a505b;border-radius:4px;padding:3px 6px"></div>
+  <div class="dim" id="selhint" style="display:none">Drag a box over the model: it takes the surface you see inside the box, the first thing each ray from your eye hits, up to the reach. More boxes add to it, alt-drag takes away. Right-drag and the wheel still move the view.</div>
   <div id="pending" style="display:none">
     <div class="row"><input type="text" id="sellabel" placeholder="Label for the selected area"></div>
     <div class="row"><button id="seladd">Add</button><button id="seldrop">Discard</button><span class="dim" id="selinfo"></span></div>
   </div>
   <div id="sels"></div>
-  <div class="row" id="selout" style="display:none"><button id="selsave">Save file</button><button id="selcopy">Copy</button><span class="dim" id="selmsg"></span></div>
+  <div class="row" id="selout" style="display:none"><button id="selsave">Save file</button><button id="selcopy">Copy</button></div>
+  <div class="dim" id="selmsg"></div>
   <hr>
   <div id="list"></div>
 </div>
@@ -330,6 +331,7 @@ function render() {
   const dpr = window.devicePixelRatio || 1, w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
   gl.viewport(0, 0, w, h);
+  gl.depthMask(true);
   gl.clearColor(0.086, 0.094, 0.11, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   const [m, t] = matrix(w / h);
   gl.uniformMatrix4fv(U("mvp"), false, m);
@@ -409,6 +411,7 @@ function depthPass(m, t, w, h) {         // the scene's depth, packed into the c
   }
   gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.f);
   gl.viewport(0, 0, w, h);
+  gl.depthMask(true);         // or the clear leaves the depth of the last selection
   gl.clearColor(1, 1, 1, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   gl.uniformMatrix4fv(U("mvp"), false, m);
   gl.uniform1f(U("scale"), DATA.scale); gl.uniform1f(U("height"), DATA.layer_height);
@@ -421,6 +424,21 @@ function depthPass(m, t, w, h) {         // the scene's depth, packed into the c
   gl.uniform1f(U("depthOut"), 0);
 }
 
+function pieces(lines) {       // the model's lines cut into short pieces, so a box takes only what is inside it
+  const step = 0.4 / DATA.scale, n = lines.length / 5;
+  let total = 0;
+  for (let o = 0; o < lines.length; o += 5) total += Math.max(1, Math.ceil(Math.hypot(lines[o + 2] - lines[o], lines[o + 3] - lines[o + 1]) / step));
+  const out = new Uint16Array(total * 5);
+  for (let o = 0, k = 0; o < lines.length; o += 5) {
+    const x0 = lines[o], y0 = lines[o + 1], dx = lines[o + 2] - x0, dy = lines[o + 3] - y0;
+    const c = Math.max(1, Math.ceil(Math.hypot(dx, dy) / step));
+    for (let j = 0; j < c; j++, k += 5) {
+      out[k] = x0 + dx * j / c; out[k + 1] = y0 + dy * j / c; out[k + 2] = x0 + dx * (j + 1) / c; out[k + 3] = y0 + dy * (j + 1) / c; out[k + 4] = lines[o + 4];
+    }
+  }
+  return out;
+}
+
 function selectRect(x0, y0, x1, y1, remove) {       // in CSS pixels of the canvas, y down
   if (!model || !show.model) return;
   const dpr = window.devicePixelRatio || 1, w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
@@ -429,12 +447,11 @@ function selectRect(x0, y0, x1, y1, remove) {       // in CSS pixels of the canv
   const ry0 = Math.max(0, Math.floor(h - y1 * dpr)), ry1 = Math.min(h, Math.ceil(h - y0 * dpr));
   const rw = rx1 - rx0, rh = ry1 - ry0;
   if (rw <= 0 || rh <= 0) return;
-  const through = $("selthrough").checked, pix = new Uint8Array(rw * rh * 4);
-  if (!through) {
-    depthPass(m, t, w, h);
-    gl.readPixels(rx0, ry0, rw, rh, gl.RGBA, gl.UNSIGNED_BYTE, pix);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  }
+  const pix = new Uint8Array(rw * rh * 4), reach = +$("selreach").value || 200, px = 2 / (t * h);   // px: mm per pixel at 1 mm away
+  depthPass(m, t, w, h);
+  gl.readPixels(rx0, ry0, rw, rh, gl.RGBA, gl.UNSIGNED_BYTE, pix);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  let hit = 0, beyond = 0;
   const lin = d => near * far / (far - d * (far - near));
   const sc = DATA.scale, ztop = +$("ztop").value + 0.001, zbot = +$("zbot").value - 0.001, half = DATA.layer_height / 2;
   for (let i = 0, o = 0; i < pending.length; i++, o += 5) {
@@ -446,14 +463,13 @@ function selectRect(x0, y0, x1, y1, remove) {       // in CSS pixels of the canv
     const sx = Math.floor(((m[0] * x + m[4] * y + m[8] * z + m[12]) / cw * 0.5 + 0.5) * w);
     const sy = Math.floor(((m[1] * x + m[5] * y + m[9] * z + m[13]) / cw * 0.5 + 0.5) * h);
     if (sx < rx0 || sx >= rx1 || sy < ry0 || sy >= ry1) continue;
-    if (!through) {
-      const k = ((sy - ry0) * rw + sx - rx0) * 4;
-      const front = pix[k] / 255 + pix[k + 1] / 65025 + pix[k + 2] / 16581375;
-      const d = (m[2] * x + m[6] * y + m[10] * z + m[14]) / cw * 0.5 + 0.5;
-      if (lin(d) > lin(front) + 1.2) continue;       // hidden behind something, by more than a wall or so
-    }
-    pending[i] = remove ? 0 : 1;
+    const k = ((sy - ry0) * rw + sx - rx0) * 4;
+    const front = pix[k] / 255 + pix[k + 1] / 65025 + pix[k + 2] / 16581375;
+    if (cw > lin(front) + 0.3 + 2 * px * cw) continue;       // the ray stopped on something in front of this
+    if (cw > reach) { beyond++; continue; }
+    pending[i] = remove ? 0 : 1; hit++;
   }
+  if (!hit && beyond) say(`nothing within ${reach} mm of your eye: zoom in or raise the reach`);
   showPending();
 }
 
@@ -504,7 +520,7 @@ function describe(idx) {          // what the file says about a selection, in th
   const risks = DATA.regions.filter(r => r.min[0] <= hi[0] && r.max[0] >= lo[0] && r.min[1] <= hi[1] && r.max[1] >= lo[1] &&
                                          r.z[0] <= hi[2] && r.z[1] >= lo[2]).map(r => ({ id: r.id, kind: r.kind, length: r.length }));
   return { min: lo.map(r2), max: hi.map(r2), size: hi.map((v, c) => r2(v - lo[c])), center: sum.map(v => r2(v / idx.length)),
-           line_mm: Math.round(length * 10) / 10, printed_moves: idx.length, risk_areas: risks, points };
+           line_mm: Math.round(length * 10) / 10, risk_areas: risks, points };
 }
 
 function addSelection(label, idx, fromRisk, quiet) {
@@ -594,7 +610,7 @@ if (jump && DATA.regions[jump[1] - 1]) focus(jump[1] - 1);
     if (L.count) {
       const bytes = await decode(L.data);
       layers[L.name] = makeLayer(L.name, bytes, L.count, L.width);
-      if (L.name === "model") { model = new Uint16Array(bytes); pending = new Uint8Array(L.count); restore(); }
+      if (L.name === "model") { model = pieces(new Uint16Array(bytes)); pending = new Uint8Array(model.length / 5); restore(); }
     }
     L.data = null;
     draw();

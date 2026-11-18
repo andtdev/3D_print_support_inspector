@@ -4,6 +4,18 @@ All notable changes to the 3D print support inspector. How it works and its sett
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-18
+
+### Added
+
+- Tests on real slices of the test piece from Cura 5.14.0, with and without supports.
+
+### Fixed
+
+- Cura's slices: it fills a bridge with lines that end on the walls spanning the gap, not on the
+  layer below, so the fill of every bridge counted as hanging. A line's end now also counts as held
+  when it lies against a held line of its own layer.
+
 ## [0.3.1] - 2026-11-18
 
 ### Added

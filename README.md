@@ -100,16 +100,16 @@ when the report is reloaded, as long as it is of the same slice.
 | `--resolution` | 0.2 | mm, the length of the pieces. |
 | `--plate` | 1 | Plate of a 3MF. |
 | `--slicer` | Bambu Studio or OrcaSlicer, where found | The executable that slices a project that is not sliced. |
-| `--layer-height`, `--line-width` | 0.2, 0.42 | mm, for G-code that does not say (Cura's). |
+| `--layer-height`, `--line-width` | 0.2, 0.42 | mm, for G-code that does not say (Cura's). The layer height is then taken from the layers themselves where it can be. |
 | `-o`, `--json`, `--no-open`, `--no-viewer`, `--viewer-infill` | | Output. |
 
 `support-inspector --help` lists them all.
 
 ## Limits
 
-- Tested on real slices from Bambu Studio 2, OrcaSlicer 2.5 and PrusaSlicer 2.9. Cura's comments are
-  read too, but that is tested only on small hand-written G-code, not on Cura's own output. If it
-  gets a slice wrong, please open an issue with the G-code.
+- Tested on real slices of the test piece from Bambu Studio 2, OrcaSlicer 2.5, PrusaSlicer 2.9 and
+  Cura 5.14, and on little else from the last three. If it gets a slice wrong, please open an
+  issue with the G-code.
 - PrusaSlicer puts no support under what it prints as a bridge (its "Don't support bridges"
   setting), so with supports on, a long bridge is still reported. That is what the G-code says.
 - Text G-code only: not PrusaSlicer's binary `.bgcode` (switch "Supports binary G-code" off in the
@@ -126,7 +126,7 @@ when the report is reloaded, as long as it is of the same slice.
 
 They check a clean cube, a ledge with and without support, long and short bridges and leaning walls,
 written as G-code in each slicer's comment style, and real slices of the test piece from Bambu Studio,
-OrcaSlicer and PrusaSlicer, with and without supports.
+OrcaSlicer, PrusaSlicer and Cura, with and without supports.
 
 ## Licence
 

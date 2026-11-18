@@ -50,3 +50,16 @@ def test_prusaslicer_with_supports(tmp_path):
     found = areas("prusaslicer_supports_on.gcode", tmp_path, "--ignore-steep")
     assert [r["kind"] for r in found] == ["bridge", "bridge"]
     assert found[0]["length"] > 200 and found[1]["length"] < 100
+
+
+def test_cura_without_supports(tmp_path):
+    """Cura fills a bridge with diagonal lines that end on the walls spanning the gap. Across the
+    4 mm gap they are 5.7 mm long: over the default limit, within a limit of 6."""
+    found = areas("cura_supports_off.gcode", tmp_path, "--ignore-steep")
+    assert [(r["kind"], round(r["z"][0], 1)) for r in found] == [("hanging", 9.1), ("hanging", 9.1), ("bridge", 6.1)]
+    found = areas("cura_supports_off.gcode", tmp_path, "--ignore-steep", "--max-bridge", "6")
+    assert [r["kind"] for r in found] == ["hanging", "hanging"]
+
+
+def test_cura_with_supports(tmp_path):
+    assert areas("cura_supports_on.gcode", tmp_path) == []

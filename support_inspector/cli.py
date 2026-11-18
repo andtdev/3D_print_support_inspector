@@ -315,7 +315,12 @@ def inspect(g, a):
 
         if (status == HANGING).any():
             on_infill = nearest(infill_below, mid, 1.0)[0] <= a.hang_fraction * w
-            bridges(status, piece, g["path"][idx][owner], pa, pb, w, on_infill, a)
+            path = g["path"][idx][owner]
+            bridges(status, piece, path, pa, pb, w, on_infill, a)
+            # Cura fills a bridge with lines that end on the walls spanning the gap, not on the layer
+            # below: what still hangs gets a second look, with the layer's own held lines as anchors.
+            if (status == HANGING).any() and (status == OK).any():
+                bridges(status, piece, path, pa, pb, w, on_infill, a, cKDTree(mid[status == OK]))
         risky = status != OK
         if risky.any():
             out["a"].append(pa[risky]); out["b"].append(pb[risky])
@@ -327,13 +332,16 @@ def inspect(g, a):
     return {k: np.concatenate(v) for k, v in out.items()}
 
 
-def bridges(status, piece, path, pa, pb, w, on_infill, a):
+def bridges(status, piece, path, pa, pb, w, on_infill, a, anchors=None):
     """Sort out the runs of hanging pieces along each printed path, in place.
 
     A run held at both ends is a bridge: fine up to --max-bridge, a risk of its own kind beyond, and
     fine at any length when an end rests on the infill, because then it is the skin over the infill
     inside the part. A run held at one end only may stick out by a line width or two. Everything else
-    stays hanging."""
+    stays hanging.
+
+    With anchors, a tree of the layer's held pieces, a run that reaches the end of its path is held
+    there when the end lies against one of them."""
     hang = status == HANGING
     n = len(status)
     new_path = np.r_[True, path[1:] != path[:-1]]
@@ -375,8 +383,12 @@ def bridges(status, piece, path, pa, pb, w, on_infill, a):
                     after = ps
                 held_end = True
         length = sum(cum[e2] - cum[s2] for s2, e2 in parts)
+        rests = (held_start and on_infill[before]) or (held_end and on_infill[after])
+        if anchors is not None:
+            held_start = held_start or anchors.query(pa[s])[0] <= w[s]
+            held_end = held_end or anchors.query(pb[e - 1])[0] <= w[s]
         if held_start and held_end:
-            new = OK if length <= a.max_bridge or on_infill[before] or on_infill[after] else BRIDGE
+            new = OK if length <= a.max_bridge or rests else BRIDGE
         elif held_start or held_end:
             new = OK if length <= 2 * float(w[s]) else HANGING
         else:

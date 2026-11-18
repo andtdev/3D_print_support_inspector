@@ -46,6 +46,22 @@ surfaces, the supports and the risk areas, each with its number from the list.
 - "Cut above z" and "Cut below z" hide layers; "Model opacity" makes the model see-through.
 - `report.html#area=3` opens on area 3.
 
+### Selecting and labelling areas
+
+To point at parts of the print, for instance to say what should change where:
+
+1. Press "Select areas" (or S) and drag a box over the model. Only what you see is taken; with
+   "through the model" ticked, everything inside the box is, front to back. More boxes add to the
+   selection, alt-drag takes away, a click takes a small spot. The "+" beside a risk area selects
+   that area. Right-drag and the wheel still move the view.
+2. Type a label and press Enter or "Add". The area takes a colour and shows its label in the view.
+3. "Save file" downloads `NAME.selections.json`; "Copy" puts the same text on the clipboard.
+
+The file names the inspected file (name and full path) and lists each selection with its label, its
+box (`min`, `max`, `size`, `center`, in mm in the plate's coordinates), the length of printed line
+in it, the risk areas it touches and a sample of its points. The selections stay in the browser
+when the report is reloaded, as long as it is of the same slice.
+
 ## Settings
 
 | Option | Default | |

@@ -28,6 +28,16 @@
   .pin.on { outline: 2px solid #fff; }
   button { background: #343a44; color: inherit; border: 1px solid #4a505b; border-radius: 4px; padding: 3px 9px; cursor: pointer; }
   #help { position: absolute; right: 10px; bottom: 8px; color: #6f7580; font-size: 11px; pointer-events: none; }
+  #rect { position: absolute; border: 1px dashed #fff; background: rgba(255,255,255,.08); display: none; pointer-events: none; }
+  .tag { position: absolute; transform: translate(-50%, -50%); padding: 0 5px; border-radius: 3px; font-size: 11px;
+         line-height: 16px; font-weight: 600; color: #000; cursor: pointer; white-space: nowrap; user-select: none; }
+  input[type=text] { background: #16181c; color: inherit; border: 1px solid #4a505b; border-radius: 4px; padding: 3px 6px; flex: 1; min-width: 0; }
+  button.on { background: #2f6fed; border-color: #2f6fed; color: #fff; }
+  .sel { display: flex; gap: 6px; align-items: baseline; margin: 3px 0; cursor: pointer; }
+  .sel span.name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .x { cursor: pointer; color: #8b919b; padding: 0 4px; }
+  .x:hover { color: #fff; }
+  .area .x { margin-left: auto; }
   #ok { color: #6fd08c; font-weight: 600; margin: 6px 0; }
 </style>
 </head>
@@ -48,10 +58,19 @@
   <hr>
   <div class="dim" id="settings"></div>
   <hr>
+  <div class="row"><button id="selmode">Select areas</button><label style="text-align:right">through the model</label><input type="checkbox" id="selthrough"></div>
+  <div class="dim" id="selhint" style="display:none">Drag a box over the model. More boxes add to it, alt-drag takes away. Right-drag and the wheel still move the view.</div>
+  <div id="pending" style="display:none">
+    <div class="row"><input type="text" id="sellabel" placeholder="Label for the selected area"></div>
+    <div class="row"><button id="seladd">Add</button><button id="seldrop">Discard</button><span class="dim" id="selinfo"></span></div>
+  </div>
+  <div id="sels"></div>
+  <div class="row" id="selout" style="display:none"><button id="selsave">Save file</button><button id="selcopy">Copy</button><span class="dim" id="selmsg"></span></div>
+  <hr>
   <div id="list"></div>
 </div>
-<div id="view"><canvas id="gl"></canvas><div id="pinbox"></div>
-  <div id="help">drag: turn &nbsp; shift-drag or right-drag: move &nbsp; wheel: zoom &nbsp; click an area: go to it</div></div>
+<div id="view"><canvas id="gl"></canvas><div id="pinbox"></div><div id="rect"></div>
+  <div id="help">drag: turn &nbsp; shift-drag or right-drag: move &nbsp; wheel: zoom &nbsp; click an area: go to it &nbsp; S: select areas</div></div>
 <script>
 const DATA = /*DATA*/null;
 const COLOR = { model: [0.70, 0.73, 0.78], support: [0.20, 0.62, 0.32], other: [0.38, 0.40, 0.44],
@@ -103,6 +122,10 @@ DATA.regions.forEach((r, i) => {
   row.innerHTML = `<b style="color:${css(COLOR[r.kind])}">${r.id}</b><span>${r.kind}, ${r.length} mm of line` +
     `<br><span class="dim">z ${r.z[0]}${r.z[1] > r.z[0] ? " to " + r.z[1] : ""} &middot; x ${r.center[0]}, y ${r.center[1]}</span></span>`;
   row.onclick = () => focus(i);
+  const plus = document.createElement("span");
+  plus.className = "x"; plus.textContent = "+"; plus.title = "Select this area, to label it";
+  plus.onclick = e => { e.stopPropagation(); focus(i); selectRegion(r); };
+  row.appendChild(plus);
   $("list").appendChild(row);
   rows.push(row);
   if (i < 150) {
@@ -143,11 +166,30 @@ $("uncut").onclick = () => { $("ztop").value = zmax; $("zbot").value = 0; cutLab
 
 const canvas = $("gl");
 let drag = null;
-canvas.onpointerdown = e => { drag = { x: e.clientX, y: e.clientY, pan: e.shiftKey || e.button === 2 }; canvas.setPointerCapture(e.pointerId); };
-canvas.onpointerup = () => { drag = null; };
+canvas.onpointerdown = e => {
+  drag = { x: e.clientX, y: e.clientY, pan: e.shiftKey || e.button === 2 };
+  if (selecting && e.button === 0 && !e.shiftKey) drag.box = { x: e.offsetX, y: e.offsetY, x1: e.offsetX, y1: e.offsetY };
+  canvas.setPointerCapture(e.pointerId);
+};
+canvas.onpointerup = e => {
+  if (drag && drag.box) {
+    const b = drag.box;
+    $("rect").style.display = "none";
+    const grow = Math.abs(b.x1 - b.x) < 4 && Math.abs(b.y1 - b.y) < 4 ? 6 : 0;     // a click picks a small spot
+    selectRect(Math.min(b.x, b.x1) - grow, Math.min(b.y, b.y1) - grow, Math.max(b.x, b.x1) + grow, Math.max(b.y, b.y1) + grow, e.altKey);
+  }
+  drag = null;
+};
 canvas.oncontextmenu = e => e.preventDefault();
 canvas.onpointermove = e => {
   if (!drag) return;
+  if (drag.box) {
+    const b = drag.box, r = $("rect").style;
+    b.x1 = e.offsetX; b.y1 = e.offsetY;
+    r.display = "block"; r.left = Math.min(b.x, b.x1) + "px"; r.top = Math.min(b.y, b.y1) + "px";
+    r.width = Math.abs(b.x1 - b.x) + "px"; r.height = Math.abs(b.y1 - b.y) + "px";
+    return;
+  }
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
   drag.x = e.clientX; drag.y = e.clientY;
   if (drag.pan) {
@@ -191,7 +233,7 @@ function matrix(aspect) {      // projection * view, column-major
     for (let k = 0; k < 4; k++) v += proj[k * 4 + rr] * view[c * 4 + k];
     m[c * 4 + rr] = v;
   }
-  return [m, t];
+  return [m, t, near, far];
 }
 
 // ------------------------------------------------------------------------------------------- WebGL
@@ -214,12 +256,17 @@ void main() {
   gl_Position = c; vz = pz * scale; side = corner.y; tangent = b - a;
 }`;
 const FS = `#version 300 es
-precision mediump float;
+precision highp float;
 in float vz; in float side; in vec3 tangent;
-uniform vec3 color; uniform float alpha, ztop, zbot, flat_;
+uniform vec3 color; uniform float alpha, ztop, zbot, flat_, depthOut;
 out vec4 frag;
 void main() {
   if (vz > ztop || vz < zbot) discard;
+  if (depthOut > 0.5) {
+    float a = clamp(gl_FragCoord.z, 0.0, 0.9999999) * 255.0, r = floor(a), b = (a - r) * 255.0, g = floor(b);
+    frag = vec4(r / 255.0, g / 255.0, floor((b - g) * 255.0) / 255.0, 1.0);
+    return;
+  }
   vec3 t = normalize(tangent + vec3(1e-6));
   float along = dot(t, normalize(vec3(0.45, 0.35, 0.82)));
   float light = 0.45 + 0.55 * sqrt(max(0.0, 1.0 - along * along));
@@ -255,7 +302,7 @@ function makeLayer(name, bytes, count, width) {
     gl.vertexAttribPointer(loc, len, gl.UNSIGNED_SHORT, false, 10, at);
     gl.vertexAttribDivisor(loc, 1);
   });
-  return { name, vao, count, width };
+  return { name, vao, buf, count, width };
 }
 async function decode(b64) {
   try { return await (await fetch("data:application/octet-stream;base64," + b64)).arrayBuffer(); }
@@ -298,12 +345,23 @@ function render() {
   if (show.support) drawLayer(layers.support, COLOR.support, 1, 0.5 * dpr, false);
   if (show.model && opacity >= 1) drawLayer(layers.model, COLOR.model, 1, 0.5 * dpr, false);
   for (const k of RISK) if (show[k]) drawLayer(layers[k], COLOR[k], 1, 1.5 * dpr, true);
+  for (const sel of selections) drawLayer(sel.layer, sel.color, 1, 1.5 * dpr, true);
+  drawLayer(layers.pending, [1, 1, 1], 1, 1.5 * dpr, true);
   gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false);
   if (show.model && opacity < 1) drawLayer(layers.model, COLOR.model, opacity * 0.6, 0.5 * dpr, false);
   if ($("xray").checked) {
     gl.disable(gl.DEPTH_TEST);
     for (const k of RISK) if (show[k]) drawLayer(layers[k], COLOR[k], 0.4, 1.5 * dpr, true);
+    for (const sel of selections) drawLayer(sel.layer, sel.color, 0.4, 1.5 * dpr, true);
+    drawLayer(layers.pending, [1, 1, 1], 0.4, 1.5 * dpr, true);
   }
+  selections.forEach(sel => {
+    const c = sel.info.center, p = [c[0] - origin[0], c[1] - origin[1], c[2]];
+    const cw = m[3] * p[0] + m[7] * p[1] + m[11] * p[2] + m[15];
+    sel.tag.style.display = cw > 0 ? "" : "none";
+    sel.tag.style.left = ((m[0] * p[0] + m[4] * p[1] + m[8] * p[2] + m[12]) / cw * 0.5 + 0.5) * canvas.clientWidth + "px";
+    sel.tag.style.top = (0.5 - (m[1] * p[0] + m[5] * p[1] + m[9] * p[2] + m[13]) / cw * 0.5) * canvas.clientHeight + "px";
+  });
 
   const on = $("pins").checked, ztop = +$("ztop").value, zbot = +$("zbot").value;
   pins.forEach((pin, i) => {
@@ -317,13 +375,227 @@ function render() {
     pin.style.top = (0.5 - y * 0.5) * canvas.clientHeight + "px";
   });
 }
+// -------------------------------------------------------------------------------------- selections
+// The user boxes parts of the model, labels them and saves the lot as a file that names the source.
+const PALETTE = [[0.1, 0.9, 1.0], [1.0, 0.3, 0.9], [0.5, 1.0, 0.3], [0.45, 0.6, 1.0], [1.0, 0.6, 0.75], [0.2, 1.0, 0.7], [0.8, 0.6, 1.0]];
+const STORE = "support_inspector:" + (DATA.source_path || DATA.source);
+let selecting = false, model = null, pending = null, pendingFrom = null, fbo = null;
+const selections = [];
+
+function setMode(on) {
+  selecting = on;
+  $("selmode").classList.toggle("on", on);
+  $("selhint").style.display = on ? "" : "none";
+  canvas.style.cursor = on ? "crosshair" : "grab";
+}
+$("selmode").onclick = () => setMode(!selecting);
+window.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  if (e.key === "s" || e.key === "S") setMode(!selecting);
+  if (e.key === "Escape") setMode(false);
+});
+
+function depthPass(m, t, w, h) {         // the scene's depth, packed into the colours of a texture
+  if (!fbo || fbo.w !== w || fbo.h !== h) {
+    fbo = { w, h, f: gl.createFramebuffer() };
+    const tex = gl.createTexture(), rb = gl.createRenderbuffer();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, w, h);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.f);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rb);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo.f);
+  gl.viewport(0, 0, w, h);
+  gl.clearColor(1, 1, 1, 1); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.uniformMatrix4fv(U("mvp"), false, m);
+  gl.uniform1f(U("scale"), DATA.scale); gl.uniform1f(U("height"), DATA.layer_height);
+  gl.uniform2f(U("viewport"), w, h); gl.uniform1f(U("pxPerUnit"), t * h / 2);
+  gl.uniform1f(U("ztop"), +$("ztop").value + 0.001); gl.uniform1f(U("zbot"), +$("zbot").value - 0.001);
+  gl.uniform1f(U("depthOut"), 1);
+  gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.disable(gl.BLEND);
+  const dpr = window.devicePixelRatio || 1;
+  for (const k of ["other", "support", "model"]) if (show[k]) drawLayer(layers[k], [0, 0, 0], 1, 0.5 * dpr, true);
+  gl.uniform1f(U("depthOut"), 0);
+}
+
+function selectRect(x0, y0, x1, y1, remove) {       // in CSS pixels of the canvas, y down
+  if (!model || !show.model) return;
+  const dpr = window.devicePixelRatio || 1, w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
+  const [m, t, near, far] = matrix(w / h);
+  const rx0 = Math.max(0, Math.floor(x0 * dpr)), rx1 = Math.min(w, Math.ceil(x1 * dpr));
+  const ry0 = Math.max(0, Math.floor(h - y1 * dpr)), ry1 = Math.min(h, Math.ceil(h - y0 * dpr));
+  const rw = rx1 - rx0, rh = ry1 - ry0;
+  if (rw <= 0 || rh <= 0) return;
+  const through = $("selthrough").checked, pix = new Uint8Array(rw * rh * 4);
+  if (!through) {
+    depthPass(m, t, w, h);
+    gl.readPixels(rx0, ry0, rw, rh, gl.RGBA, gl.UNSIGNED_BYTE, pix);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+  const lin = d => near * far / (far - d * (far - near));
+  const sc = DATA.scale, ztop = +$("ztop").value + 0.001, zbot = +$("zbot").value - 0.001, half = DATA.layer_height / 2;
+  for (let i = 0, o = 0; i < pending.length; i++, o += 5) {
+    const zl = model[o + 4] * sc;
+    if (zl > ztop || zl < zbot) continue;
+    const x = (model[o] + model[o + 2]) * 0.5 * sc, y = (model[o + 1] + model[o + 3]) * 0.5 * sc, z = zl - half;
+    const cw = m[3] * x + m[7] * y + m[11] * z + m[15];
+    if (cw <= 0) continue;
+    const sx = Math.floor(((m[0] * x + m[4] * y + m[8] * z + m[12]) / cw * 0.5 + 0.5) * w);
+    const sy = Math.floor(((m[1] * x + m[5] * y + m[9] * z + m[13]) / cw * 0.5 + 0.5) * h);
+    if (sx < rx0 || sx >= rx1 || sy < ry0 || sy >= ry1) continue;
+    if (!through) {
+      const k = ((sy - ry0) * rw + sx - rx0) * 4;
+      const front = pix[k] / 255 + pix[k + 1] / 65025 + pix[k + 2] / 16581375;
+      const d = (m[2] * x + m[6] * y + m[10] * z + m[14]) / cw * 0.5 + 0.5;
+      if (lin(d) > lin(front) + 1.2) continue;       // hidden behind something, by more than a wall or so
+    }
+    pending[i] = remove ? 0 : 1;
+  }
+  showPending();
+}
+
+function selectRegion(r) {        // everything of the model inside a risk area's box
+  if (!model) return;
+  const sc = DATA.scale, pad = 0.3;
+  for (let i = 0, o = 0; i < pending.length; i++, o += 5) {
+    const x = (model[o] + model[o + 2]) * 0.5 * sc + origin[0], y = (model[o + 1] + model[o + 3]) * 0.5 * sc + origin[1], z = model[o + 4] * sc;
+    if (x >= r.min[0] - pad && x <= r.max[0] + pad && y >= r.min[1] - pad && y <= r.max[1] + pad && z >= r.z[0] - 0.01 && z <= r.z[1] + 0.01) pending[i] = 1;
+  }
+  pendingFrom = r.id;
+  showPending();
+}
+
+function subset(indices, name) {
+  const out = new Uint16Array(indices.length * 5);
+  indices.forEach((i, k) => out.set(model.subarray(i * 5, i * 5 + 5), k * 5));
+  return makeLayer(name, out, indices.length, 0.45);
+}
+function drop(layer) { if (layer) { gl.deleteBuffer(layer.buf); gl.deleteVertexArray(layer.vao); } }
+function picked() { const a = []; for (let i = 0; i < pending.length; i++) if (pending[i]) a.push(i); return a; }
+
+function showPending() {
+  const idx = picked();
+  drop(layers.pending);
+  layers.pending = idx.length ? subset(idx, "pending") : null;
+  $("pending").style.display = idx.length ? "" : "none";
+  if (idx.length) {
+    const info = describe(idx);
+    $("selinfo").textContent = `${info.size.map(v => v.toFixed(1)).join(" x ")} mm`;
+    $("sellabel").focus();
+  } else pendingFrom = null;
+  draw();
+}
+
+function describe(idx) {          // what the file says about a selection, in the plate's coordinates
+  const sc = DATA.scale, r2 = v => Math.round(v * 100) / 100;
+  const lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9], sum = [0, 0, 0];
+  let length = 0;
+  const points = [], step = Math.max(1, Math.floor(idx.length / 60));
+  idx.forEach((i, k) => {
+    const o = i * 5, z = model[o + 4] * sc;
+    const a = [model[o] * sc + origin[0], model[o + 1] * sc + origin[1], z], b = [model[o + 2] * sc + origin[0], model[o + 3] * sc + origin[1], z];
+    for (const p of [a, b]) for (let c = 0; c < 3; c++) { lo[c] = Math.min(lo[c], p[c]); hi[c] = Math.max(hi[c], p[c]); sum[c] += p[c] / 2; }
+    length += Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (k % step === 0) points.push([r2((a[0] + b[0]) / 2), r2((a[1] + b[1]) / 2), r2(z)]);
+  });
+  const risks = DATA.regions.filter(r => r.min[0] <= hi[0] && r.max[0] >= lo[0] && r.min[1] <= hi[1] && r.max[1] >= lo[1] &&
+                                         r.z[0] <= hi[2] && r.z[1] >= lo[2]).map(r => ({ id: r.id, kind: r.kind, length: r.length }));
+  return { min: lo.map(r2), max: hi.map(r2), size: hi.map((v, c) => r2(v - lo[c])), center: sum.map(v => r2(v / idx.length)),
+           line_mm: Math.round(length * 10) / 10, printed_moves: idx.length, risk_areas: risks, points };
+}
+
+function addSelection(label, idx, fromRisk, quiet) {
+  const color = PALETTE[selections.length % PALETTE.length];
+  const sel = { label, idx, color, from: fromRisk, info: describe(idx), layer: subset(idx, "selection") };
+  sel.tag = document.createElement("div");
+  sel.tag.className = "tag"; sel.tag.style.background = css(color); sel.tag.textContent = label;
+  sel.tag.onclick = () => goTo(sel);
+  $("pinbox").appendChild(sel.tag);
+  selections.push(sel);
+  if (!quiet) { listSelections(); store(); }
+}
+function goTo(sel) {
+  const c = sel.info.center;
+  cam.target = [c[0] - origin[0], c[1] - origin[1], c[2]];
+  cam.dist = Math.max(45, 4 * Math.max(...sel.info.size));
+  draw();
+}
+function listSelections() {
+  $("sels").innerHTML = "";
+  selections.forEach((sel, k) => {
+    const row = document.createElement("div");
+    row.className = "sel";
+    row.innerHTML = `<span class="sw" style="background:${css(sel.color)}"></span><span class="name"></span><span class="x" title="Remove">&times;</span>`;
+    row.querySelector(".name").textContent = sel.label;
+    row.onclick = () => goTo(sel);
+    row.querySelector(".x").onclick = e => {
+      e.stopPropagation();
+      drop(sel.layer); sel.tag.remove(); selections.splice(k, 1);
+      listSelections(); store(); draw();
+    };
+    $("sels").appendChild(row);
+  });
+  $("selout").style.display = selections.length ? "" : "none";
+  draw();
+}
+$("seladd").onclick = () => {
+  const idx = picked();
+  if (!idx.length) return;
+  addSelection($("sellabel").value.trim() || "area " + (selections.length + 1), idx, pendingFrom);
+  $("sellabel").value = "";
+  pending.fill(0); showPending();
+};
+$("seldrop").onclick = () => { pending.fill(0); showPending(); };
+$("sellabel").onkeydown = e => { if (e.key === "Enter") $("seladd").onclick(); };
+
+function store() {       // so a reload keeps the selections
+  try { localStorage.setItem(STORE, JSON.stringify({ count: pending.length, list: selections.map(s => ({ label: s.label, idx: s.idx, from: s.from })) })); }
+  catch (e) { /* too big for the browser's store: the file still works */ }
+}
+function restore() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORE) || "null");
+    if (saved && saved.count === pending.length) saved.list.forEach(s => addSelection(s.label, s.idx, s.from, true));
+  } catch (e) { /* nothing to restore */ }
+  listSelections();
+}
+
+function report() {
+  return JSON.stringify({
+    tool: "3D_print_support_inspector", what: "areas of the print selected and labelled in the viewer",
+    source: DATA.source, source_path: DATA.source_path, saved: new Date().toISOString(),
+    units: "mm, in the coordinates of the sliced plate; z is the top of a layer",
+    selections: selections.map(s => Object.assign({ label: s.label }, s.from ? { from_risk_area: s.from } : {}, s.info)),
+  }, null, 1).replace(/\[[-\d.,\s]+\]/g, list => list.replace(/\s+/g, " ").replace("[ ", "[").replace(" ]", "]"));     // number lists on one line
+}
+const say = text => { $("selmsg").textContent = text; setTimeout(() => { $("selmsg").textContent = ""; }, 4000); };
+$("selsave").onclick = () => {
+  const a = document.createElement("a"), name = DATA.source.replace(/(\.gcode)?\.[^.]+$/, "") + ".selections.json";
+  a.href = URL.createObjectURL(new Blob([report()], { type: "application/json" }));
+  a.download = name; a.click();
+  say("saved " + name + " to your downloads");
+};
+$("selcopy").onclick = async () => {
+  const text = report();
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) { const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); }
+  say("copied");
+};
+
 window.onresize = draw;
 const jump = /#area=(\d+)/.exec(location.hash);       // report.html#area=3 opens on area 3
 if (jump && DATA.regions[jump[1] - 1]) focus(jump[1] - 1);
 (async () => {
   layers.bed = bedGrid();
   for (const L of DATA.layers) {
-    if (L.count) layers[L.name] = makeLayer(L.name, await decode(L.data), L.count, L.width);
+    if (L.count) {
+      const bytes = await decode(L.data);
+      layers[L.name] = makeLayer(L.name, bytes, L.count, L.width);
+      if (L.name === "model") { model = new Uint16Array(bytes); pending = new Uint8Array(L.count); restore(); }
+    }
     L.data = null;
     draw();
   }

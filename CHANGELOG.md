@@ -2,6 +2,15 @@
 
 All notable changes to the 3D print support inspector. How it works and its settings are in `README.md`.
 
+## [Unreleased]
+
+### Added
+
+- Selecting areas in the viewer: drag a box over the model (only what is visible, or through the
+  model), or take a risk area with its "+", give the selection a label, and save all of them as
+  `NAME.selections.json` or copy them. The file names the inspected file and gives each labelled
+  area's box, centre, line length, the risk areas it touches and sample points.
+
 ## [0.1.0] - 2026-11-18
 
 ### Added

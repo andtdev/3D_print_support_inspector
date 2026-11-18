@@ -437,7 +437,7 @@ def write_viewer(path, g, risk, region_of, found, a, source):
         layers.append({"name": name, "count": int(m.sum()), "width": 0.45,
                        "data": pack(risk["a"][m] - origin, risk["b"][m] - origin, risk["z"][m], scale)})
     data = {
-        "source": os.path.basename(source), "origin": origin.tolist(), "scale": scale,
+        "source": os.path.basename(source), "source_path": os.path.abspath(source), "origin": origin.tolist(), "scale": scale,
         "zmax": float(g["z"].max()), "layer_height": float(np.median(g["h"])),
         "size": (np.maximum(g["p0"].max(axis=0), g["p1"].max(axis=0)) - origin).tolist(),
         "layers": layers, "regions": found,

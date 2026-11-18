@@ -6,3 +6,4 @@ build/
 .pytest_cache/
 drafts/
 reports/
+.DS_Store

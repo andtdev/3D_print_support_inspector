@@ -6,10 +6,12 @@ All notable changes to the 3D print support inspector. How it works and its sett
 
 ### Added
 
-- Examples of supports that miss a spot: a picture of a real part with tree supports, and
-  `examples/report_prusaslicer_supports.html`, the test piece sliced in PrusaSlicer with supports on.
-- A second test piece, `examples/hanging_tips.stl`, with its report and a test: with supports on
-  the build plate only, one small tip under a supported roof is printed into the air.
+- Examples of supports that miss a spot: `examples/report_phone_stand_detail.html`, a detail of a
+  real part with tree supports where the end of a post is printed into the air, a picture of a
+  second spot on the same part, and `examples/report_prusaslicer_supports.html`, the test piece
+  sliced in PrusaSlicer with supports on.
+- A second test piece, `examples/hanging_tips.stl`, with a test: with supports on the build plate
+  only, one small tip under a supported roof is printed into the air.
 - The README says what selecting and labelling areas is for.
 
 ## [0.3.2] - 2026-11-18

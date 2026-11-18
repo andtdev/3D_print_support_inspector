@@ -38,21 +38,21 @@ To try it without a print of your own, download a report from `examples/` and op
 
 **Supports on, and still something missed.** This is what the inspector is for.
 
-![The print cut at the tips' first layer: two tips sit on supports, the red one over an empty shaft](images/hanging_tip.png)
+![A hinge of a phone stand cut at the layer where it starts: tree supports all around, and a red spot in the middle with none](images/phone_stand_detail.png)
 
-[`examples/report_hanging_tip.html`](examples/report_hanging_tip.html): a roof on two pillars with
-three small tips hanging down from it (`examples/hanging_tips.stl`), sliced in Bambu Studio with
-supports on and "On build plate only". The picture shows the print cut at the tips' first layer,
-seen from above ("Cut above z" at 11.2). Two tips lie on the supports. The middle one has a low
-block of the model under it, where no support may stand: the supports leave a shaft there, and the
-tip is printed into the air over it. Red: nothing below.
+[`examples/report_phone_stand_detail.html`](examples/report_phone_stand_detail.html): a real part,
+the hinge at the end of a phone stand's link, sliced in Bambu Studio with tree supports. Only this
+corner of the plate is in the report. The picture shows it cut at the layer where the hinge starts,
+7 mm above the plate, seen from above ("Cut above z" at 7.3). The supports come up all around, and
+the ring lies on them. The small disc in the middle is the end of the hinge's post, 4 mm across:
+the supports stop short of its centre, and 24 mm of its first layer is printed into the air (red:
+nothing below). Orange are stretches that are held only at their ends, over more than 5 mm.
 
 ![A part covered in tree supports, with one small spot the supports missed](images/missed_spot.png)
 
-A real part, a link of a phone stand, sliced in Bambu Studio with tree supports all around it.
-Inside, where the plate closes over a cut-out, a 4 x 3 mm patch has no support: 13 mm of printed
-line with nothing under it. From the outside it sits behind walls and supports. The plate holds
-four of these parts and the list has four entries, one per part.
+A later version of the same part. Inside, where the plate closes over a cut-out, a 4 x 3 mm patch
+has no support: 13 mm of printed line with nothing under it. From the outside it sits behind walls
+and supports. The plate holds four of these parts and the list has four entries, one per part.
 
 [`examples/report_prusaslicer_supports.html`](examples/report_prusaslicer_supports.html) is a case
 you can reproduce: `examples/test_piece.stl` sliced in PrusaSlicer with supports on. The ledge gets

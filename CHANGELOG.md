@@ -4,6 +4,30 @@ All notable changes to the 3D print support inspector. How it works and its sett
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-18
+
+### Added
+
+- The MIT licence.
+- A Python package with the `support-inspector` command (`pipx install git+https://...`), and `--version`.
+- Tests: hand-written G-code in the comment styles of Bambu Studio, PrusaSlicer, OrcaSlicer and Cura,
+  and two real Bambu Studio slices of the new test piece, `examples/test_piece.stl` (a ledge, a long
+  and a short bridge, walls leaning 40° and 65°).
+- `examples/report.html`, the report on the test piece sliced without supports.
+
+### Changed
+
+- The slicer for a project that is not sliced is looked up in the usual places of Bambu Studio and
+  OrcaSlicer on macOS and Windows and on the PATH; the viewer opens in the default browser on any
+  system.
+- The code moved into the `support_inspector` package; `./inspect` still works.
+
+### Fixed
+
+- A wall that changed feature on the way (inner wall, overhang wall, inner wall) was cut into
+  separate paths, so its overhang stretch counted as held at no end: short bridges and held
+  overhangs were reported as hanging. A change of feature no longer ends the path.
+
 ## [0.2.0] - 2026-11-18
 
 ### Added

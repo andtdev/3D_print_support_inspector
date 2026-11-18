@@ -6,19 +6,39 @@ Painting an area for support, or switching supports on, does not mean a support 
 slicer decides where the supports really go. So the inspector reads the slicer's result, the G-code,
 and checks every printed line of the model against what lies directly below it.
 
+![The viewer on the test piece: a ledge and a long bridge with nothing under them](images/viewer.png)
+
+Slicers warn about "floating regions" only when supports are off, and do not say where. With supports
+on they say nothing, also when a support did not reach, was blocked, or was never generated under a
+small feature. The inspector answers that one question: after slicing, is every line of the model
+resting on something?
+
+## Install
+
+It needs Python 3.9 or newer.
+
+    pipx install git+https://github.com/andtdev/3D_print_support_inspector
+
+or `pip install git+https://github.com/andtdev/3D_print_support_inspector` in an environment of your
+own. That gives the `support-inspector` command. Without installing: clone the repository and run
+`./inspect` in place of `support-inspector` (macOS and Linux); its first run sets up a Python
+environment with numpy and scipy in `.venv`.
+
 ## Use
 
-    ./inspect plate.gcode
-    ./inspect project.gcode.3mf      a sliced project exported from the slicer
-    ./inspect project.3mf            not sliced yet: Bambu Studio slices it first
+    support-inspector plate.gcode
+    support-inspector project.gcode.3mf      a sliced project exported from the slicer
+    support-inspector project.3mf            not sliced yet: Bambu Studio or OrcaSlicer slices it first
 
-The first run sets up a Python environment with numpy and scipy in `.venv`. A four-part, 8-hour plate
-takes about 10 seconds.
+A four-part, 8-hour plate takes about 10 seconds.
+
+To try it without a print of your own, open [`examples/report.html`](examples/report.html) in a
+browser: the report on `examples/test_piece.stl`, sliced without supports.
 
 It prints the risk areas, writes `NAME.support_report.html` next to the input, opens it, and exits
 with 1 when it found any area (0 when it found none), so a build script can stop on it:
 
-    ./inspect print/module_print.3mf --no-open || echo "something hangs"
+    support-inspector plate.gcode --no-open || echo "something hangs"
 
 ## What it reports
 
@@ -79,15 +99,32 @@ when the report is reloaded, as long as it is of the same slice.
 | `--check-infill` | | Check the infill too. |
 | `--resolution` | 0.2 | mm, the length of the pieces. |
 | `--plate` | 1 | Plate of a 3MF. |
-| `--slicer` | Bambu Studio in /Applications | The executable that slices a project that is not sliced. |
+| `--slicer` | Bambu Studio or OrcaSlicer, where found | The executable that slices a project that is not sliced. |
+| `--layer-height`, `--line-width` | 0.2, 0.42 | mm, for G-code that does not say (Cura's). |
 | `-o`, `--json`, `--no-open`, `--no-viewer`, `--viewer-infill` | | Output. |
 
-`./inspect --help` lists them all.
+`support-inspector --help` lists them all.
 
 ## Limits
 
-- Tested with Bambu Studio's G-code only. The comments of PrusaSlicer, OrcaSlicer and Cura are read
-  too, but that is untested.
+- Tested on real slices from Bambu Studio only. The comments of PrusaSlicer, OrcaSlicer and Cura are
+  read too, but that is tested only on small hand-written G-code in each style, not on those
+  slicers' own output. If it gets one of them wrong, please open an issue with the G-code.
+- Text G-code only: not PrusaSlicer's binary `.bgcode` (switch "Supports binary G-code" off in the
+  printer settings, or convert the file).
+- One nozzle moving in flat layers: no non-planar or belt printing.
 - It judges geometry, not printing: a line that is held may still print badly, for example on a
   support with a large z distance.
 - The model in the viewer is drawn from the print's lines, without the infill.
+
+## Tests
+
+    pip install pytest
+    pytest
+
+They check a clean cube, a ledge with and without support, long and short bridges and leaning walls,
+written as G-code in each slicer's comment style, and two real Bambu Studio slices of the test piece.
+
+## Licence
+
+MIT, see `LICENSE`.

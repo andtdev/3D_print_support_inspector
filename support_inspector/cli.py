@@ -7,9 +7,9 @@ Every printed line of the model is cut into short pieces and each piece is check
 directly below it: the model's previous layer, or a support layer within the support gap. A piece with
 nothing below it is reported, unless it is a short bridge held at both ends.
 
-    ./inspect plate.gcode
-    ./inspect project.gcode.3mf            (a sliced project exported from the slicer)
-    ./inspect project.3mf                  (not sliced yet: Bambu Studio slices it first)
+    support-inspector plate.gcode
+    support-inspector project.gcode.3mf    (a sliced project exported from the slicer)
+    support-inspector project.3mf          (not sliced yet: Bambu Studio or OrcaSlicer slices it first)
 
 It prints a list of risk areas, writes NAME.support_report.html (the viewer) and exits with 1 when it
 found any, so it can guard a build script.
@@ -19,16 +19,39 @@ import base64
 import json
 import math
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
+import webbrowser
 import zipfile
+from pathlib import Path
 
 import numpy as np
 from scipy.spatial import cKDTree
 
+from . import __version__
+
 HERE = os.path.dirname(os.path.abspath(__file__))
-BAMBU = "/Applications/BambuStudio.app/Contents/MacOS/BambuStudio"
+# Where the slicers that can slice a project from the command line usually are
+SLICERS = [
+    "/Applications/BambuStudio.app/Contents/MacOS/BambuStudio",
+    "/Applications/OrcaSlicer.app/Contents/MacOS/OrcaSlicer",
+    r"C:\Program Files\Bambu Studio\bambu-studio.exe",
+    r"C:\Program Files\OrcaSlicer\orca-slicer.exe",
+    "bambu-studio", "orca-slicer", "BambuStudio", "OrcaSlicer",
+]
+
+
+def default_slicer():
+    """The first slicer found in its usual place or on the PATH, or None."""
+    for s in SLICERS:
+        if os.path.sep in s or "\\" in s:
+            if os.path.exists(s):
+                return s
+        elif shutil.which(s):
+            return shutil.which(s)
+    return None
 
 MODEL, SUPPORT, OTHER = 0, 1, 2      # what a printed line belongs to
 OK, STEEP, HANGING, BRIDGE = 0, 1, 2, 3   # what the check says about a piece of a line
@@ -68,8 +91,9 @@ def find_gcode(path, plate, slicer, workdir):
         if name in z.namelist():
             z.extract(name, workdir)
             return os.path.join(workdir, name)
-    if not os.path.exists(slicer):
-        sys.exit(f"{path} is not sliced and there is no slicer at {slicer} (see --slicer)")
+    if not slicer or not (os.path.exists(slicer) or shutil.which(slicer)):
+        sys.exit(f"{path} is not sliced, and no slicer was found to slice it: give Bambu Studio's or "
+                 "OrcaSlicer's executable with --slicer, or export the sliced G-code and inspect that")
     print(f"slicing {os.path.basename(path)} ...", flush=True)
     done = subprocess.run([slicer, "--slice", str(plate), "--outputdir", workdir, path],
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -165,8 +189,7 @@ def parse_gcode(filename, default_height, default_width):
                     if name not in feature_ix:
                         feature_ix[name] = len(features)
                         features.append(name)
-                    feat = feature_ix[name]
-                    extruding = False
+                    feat = feature_ix[name]      # a wall goes on as the same path when only its feature changes
                 elif line.startswith("; Z_HEIGHT:") or line.startswith(";Z:"):
                     z_comment = float(line.split(":", 1)[1])
                     extruding = False
@@ -452,8 +475,9 @@ def write_viewer(path, g, risk, region_of, found, a, source):
 
 # ---------------------------------------------------------------------------------------------- main
 
-def main():
-    p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
+def options():
+    """The command line's options."""
+    p = argparse.ArgumentParser(prog="support-inspector", description=__doc__.split("\n\n")[0],
                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument("file", help="G-code, a sliced .gcode.3mf, or a project .3mf to slice first")
     p.add_argument("--max-overhang-angle", type=float, default=45,
@@ -476,14 +500,19 @@ def main():
     p.add_argument("--layer-height", type=float, default=0.2, help="mm, when the G-code does not say")
     p.add_argument("--line-width", type=float, default=0.42, help="mm, when the G-code does not say")
     p.add_argument("--plate", type=int, default=1, help="plate of a 3MF to inspect")
-    p.add_argument("--slicer", default=BAMBU, help="Bambu Studio's executable, to slice a project that is not sliced")
+    p.add_argument("--slicer", default=default_slicer(),
+                   help="Bambu Studio's or OrcaSlicer's executable, to slice a project that is not sliced")
+    p.add_argument("--version", action="version", version=f"support-inspector {__version__}")
     p.add_argument("-o", "--output", help="the viewer's HTML file (default: next to the input)")
     p.add_argument("--json", help="also write the list of areas to this file")
     p.add_argument("--viewer-infill", action="store_true", help="draw the infill in the viewer too (a bigger file)")
     p.add_argument("--no-open", action="store_true", help="do not open the viewer")
     p.add_argument("--no-viewer", action="store_true", help="only print the list")
-    a = p.parse_args()
+    return p
 
+
+def analyse(a):
+    """Read the file and check it: the printed lines, the risky pieces, the area of each, the areas."""
     with tempfile.TemporaryDirectory() as work:
         gcode = find_gcode(a.file, a.plate, a.slicer, work)
         g = parse_gcode(gcode, a.layer_height, a.line_width)
@@ -491,6 +520,12 @@ def main():
     if a.ignore_steep:
         risk = {k: v[risk["status"] != STEEP] for k, v in risk.items()}
     found, region_of = regions(risk, a)
+    return g, risk, region_of, found
+
+
+def main(argv=None):
+    a = options().parse_args(argv)
+    g, risk, region_of, found = analyse(a)
 
     print(f"{len(g['z'])} printed moves, {len(np.unique(np.round(g['z'], 3)))} layers")
     if found:
@@ -508,8 +543,8 @@ def main():
         out = a.output or os.path.splitext(a.file)[0] + ".support_report.html"
         write_viewer(out, g, risk, region_of, found, a, a.file)
         print(f"viewer: {out}")
-        if not a.no_open and sys.platform == "darwin":
-            subprocess.run(["open", out])
+        if not a.no_open:
+            webbrowser.open(Path(out).resolve().as_uri())
     sys.exit(1 if found else 0)
 
 

@@ -107,9 +107,11 @@ when the report is reloaded, as long as it is of the same slice.
 
 ## Limits
 
-- Tested on real slices from Bambu Studio only. The comments of PrusaSlicer, OrcaSlicer and Cura are
-  read too, but that is tested only on small hand-written G-code in each style, not on those
-  slicers' own output. If it gets one of them wrong, please open an issue with the G-code.
+- Tested on real slices from Bambu Studio 2, OrcaSlicer 2.5 and PrusaSlicer 2.9. Cura's comments are
+  read too, but that is tested only on small hand-written G-code, not on Cura's own output. If it
+  gets a slice wrong, please open an issue with the G-code.
+- PrusaSlicer puts no support under what it prints as a bridge (its "Don't support bridges"
+  setting), so with supports on, a long bridge is still reported. That is what the G-code says.
 - Text G-code only: not PrusaSlicer's binary `.bgcode` (switch "Supports binary G-code" off in the
   printer settings, or convert the file).
 - One nozzle moving in flat layers: no non-planar or belt printing.
@@ -123,7 +125,8 @@ when the report is reloaded, as long as it is of the same slice.
     pytest
 
 They check a clean cube, a ledge with and without support, long and short bridges and leaning walls,
-written as G-code in each slicer's comment style, and two real Bambu Studio slices of the test piece.
+written as G-code in each slicer's comment style, and real slices of the test piece from Bambu Studio,
+OrcaSlicer and PrusaSlicer, with and without supports.
 
 ## Licence
 

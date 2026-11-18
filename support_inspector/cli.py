@@ -77,6 +77,8 @@ def category(feature):
 def is_infill(feature):
     """Lines inside the part: they lie on the sparse infill by design, so they are not checked."""
     f = feature.lower()
+    if f == "bridge infill":         # PrusaSlicer's bridges, over air as well as over the infill
+        return False
     return "infill" in f or f == "fill" or "internal" in f or "floating vertical shell" in f
 
 
@@ -84,6 +86,8 @@ def is_infill(feature):
 
 def find_gcode(path, plate, slicer, workdir):
     """The G-code to inspect: the file itself, the one inside a sliced 3MF, or a fresh slice."""
+    if not os.path.isfile(path):
+        sys.exit(f"{path}: no such file")
     if not zipfile.is_zipfile(path):
         return path
     name = f"Metadata/plate_{plate}.gcode"
@@ -247,6 +251,7 @@ def inspect(g, a):
     layers = {k: order[s:e] for k, s, e in zip(keys, starts, list(starts[1:]) + [len(order)])}
 
     infill = np.array([category(f) == MODEL and is_infill(f) for f in g["features"]])[g["feat"]]
+    model_keys = np.unique(zkey[cat == MODEL])
     trees = {}      # (layer key, kind) -> tree of the points standing in for that layer's lines
 
     def tree(key, kind):
@@ -270,6 +275,11 @@ def inspect(g, a):
             continue
         z = key / 1000
         h = float(np.median(g["h"][idx]))
+        # The layer rests on the model's layer before it. The lines' own height does not say where
+        # that is when the slicer prints thick bridges, or when the G-code gives no height at all.
+        before = model_keys[model_keys < key - round(Z_TOLERANCE * 1000)]
+        if len(before) and z - before[-1] / 1000 <= max(float(g["h"][idx].max()), 0.6) + Z_TOLERANCE:
+            h = z - before[-1] / 1000
         bottom = z - h
         if first_top is None:
             first_top = z

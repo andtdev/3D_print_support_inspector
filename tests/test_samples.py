@@ -24,3 +24,29 @@ def test_bambu_studio_without_supports(tmp_path):
 
 def test_bambu_studio_with_supports(tmp_path):
     assert areas("bambu_studio_supports_on.gcode", tmp_path) == []
+
+
+def test_orcaslicer_without_supports(tmp_path):
+    found = areas("orcaslicer_supports_off.gcode", tmp_path, "--ignore-steep")
+    assert sorted(r["kind"] for r in found) == ["bridge", "hanging"]
+    assert all(abs(r["z"][0] - 9.2) < 0.01 for r in found)
+
+
+def test_orcaslicer_with_supports(tmp_path):
+    assert areas("orcaslicer_supports_on.gcode", tmp_path) == []
+
+
+def test_prusaslicer_without_supports(tmp_path):
+    """0.3 mm layers and thick bridges. The ledge's fill goes out and back as one bridge path, so
+    the ledge counts as a bridge too."""
+    found = areas("prusaslicer_supports_off.gcode", tmp_path, "--ignore-steep")
+    assert [r["kind"] for r in found] == ["bridge", "bridge"]
+    assert all(abs(r["z"][0] - 9.35) < 0.01 for r in found)
+
+
+def test_prusaslicer_with_supports(tmp_path):
+    """PrusaSlicer puts no support under what it prints as a bridge ("don't support bridges"): the
+    long bridge stays in the air, and so does the middle of the ledge."""
+    found = areas("prusaslicer_supports_on.gcode", tmp_path, "--ignore-steep")
+    assert [r["kind"] for r in found] == ["bridge", "bridge"]
+    assert found[0]["length"] > 200 and found[1]["length"] < 100

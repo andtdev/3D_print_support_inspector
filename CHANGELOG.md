@@ -4,6 +4,21 @@ All notable changes to the 3D print support inspector. How it works and its sett
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-18
+
+### Added
+
+- Tests on real slices of the test piece from OrcaSlicer 2.5.1 and PrusaSlicer 2.9.7, with and
+  without supports.
+
+### Fixed
+
+- PrusaSlicer's slices: its bridges ("Bridge infill") were skipped as infill, and a layer with thick
+  bridges was compared with the wrong height below it, so everything on that layer counted as
+  hanging. A layer is now checked against the model's layer before it, whatever height its lines
+  claim. This also makes G-code without height comments (Cura's) work at any layer height.
+- A file that does not exist gives a one-line error, not a traceback.
+
 ## [0.3.0] - 2026-11-18
 
 ### Added

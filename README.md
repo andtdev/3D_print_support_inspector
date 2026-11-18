@@ -32,8 +32,27 @@ environment with numpy and scipy in `.venv`.
 
 A four-part, 8-hour plate takes about 10 seconds.
 
-To try it without a print of your own, open [`examples/report.html`](examples/report.html) in a
-browser: the report on `examples/test_piece.stl`, sliced without supports.
+## Examples
+
+To try it without a print of your own, download a report from `examples/` and open it in a browser.
+
+**Supports on, and still something missed.** This is what the inspector is for.
+
+![A part covered in tree supports, with one small spot the supports missed](images/missed_spot.png)
+
+A real part, a link of a phone stand, sliced in Bambu Studio with tree supports all around it.
+Inside, where the plate closes over a cut-out, a 4 x 3 mm patch has no support: 13 mm of printed
+line with nothing under it. From the outside it sits behind walls and supports. The plate holds
+four of these parts and the list has four entries, one per part.
+
+[`examples/report_prusaslicer_supports.html`](examples/report_prusaslicer_supports.html) is a case
+you can reproduce: `examples/test_piece.stl` sliced in PrusaSlicer with supports on. The ledge gets
+supports, but its middle does not, and neither does the long bridge, because PrusaSlicer puts no
+support under what it prints as a bridge.
+
+**Supports off.** [`examples/report.html`](examples/report.html) is the same test piece sliced in
+Bambu Studio without supports, the picture at the top: the ledge and the long bridge are reported,
+the 4 mm bridge and the wall leaning 40° are not.
 
 It prints the risk areas, writes `NAME.support_report.html` next to the input, opens it, and exits
 with 1 when it found any area (0 when it found none), so a build script can stop on it:
@@ -68,7 +87,10 @@ surfaces, the supports and the risk areas, each with its number from the list.
 
 ### Selecting and labelling areas
 
-To point at parts of the print, for instance to say what should change where:
+The viewer is also a way to annotate a print: select any parts of it, give each a label, and save
+the result as a file. That is for telling someone else, or a program, or an AI assistant that is
+editing the model, exactly where on the print something should change ("no support here", "this
+edge hangs", "make this thicker"), with coordinates instead of a description.
 
 1. Press "Select areas" (or S) and drag a box over the model. The box takes exactly the surface
    you see inside it: a ray goes from your eye through every point of the box and stops on the

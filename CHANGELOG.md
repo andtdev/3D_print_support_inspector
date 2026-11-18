@@ -4,6 +4,12 @@ All notable changes to the 3D print support inspector. How it works and its sett
 
 ## [Unreleased]
 
+### Added
+
+- Examples of supports that miss a spot: a picture of a real part with tree supports, and
+  `examples/report_prusaslicer_supports.html`, the test piece sliced in PrusaSlicer with supports on.
+- The README says what selecting and labelling areas is for.
+
 ## [0.3.2] - 2026-11-18
 
 ### Added

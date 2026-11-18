@@ -38,6 +38,14 @@ To try it without a print of your own, download a report from `examples/` and op
 
 **Supports on, and still something missed.** This is what the inspector is for.
 
+![A roof on a wall of supports, with one red spot: a tip hanging down that got no support](images/hanging_tip.png)
+
+[`examples/report_hanging_tip.html`](examples/report_hanging_tip.html): a roof on two pillars with
+three small tips hanging down from it (`examples/hanging_tips.stl`), sliced in Bambu Studio with
+supports on and "On build plate only". The roof and two of the tips stand on supports. The middle
+tip has a low block of the model under it, so no support may stand there, and the tip is printed
+into the air: red, nothing below. In the slicer it is a 2.4 mm square behind a wall of supports.
+
 ![A part covered in tree supports, with one small spot the supports missed](images/missed_spot.png)
 
 A real part, a link of a phone stand, sliced in Bambu Studio with tree supports all around it.

@@ -63,3 +63,10 @@ def test_cura_without_supports(tmp_path):
 
 def test_cura_with_supports(tmp_path):
     assert areas("cura_supports_on.gcode", tmp_path) == []
+
+
+def test_bambu_studio_hanging_tip(tmp_path):
+    """examples/hanging_tips.stl with supports on the build plate only: the tip over the block hangs."""
+    found = areas("bambu_studio_hanging_tip.gcode", tmp_path)
+    assert [r["kind"] for r in found] == ["hanging"]
+    assert abs(found[0]["z"][0] - 11.2) < 0.01 and found[0]["length"] < 20
